@@ -1,0 +1,93 @@
+import { Args, Mutation, Query, Resolver } from '@nestjs/graphql';
+import {
+    CreateChannelResult,
+    DeletionResponse,
+    MutationCreateChannelArgs,
+    MutationDeleteChannelArgs,
+    MutationDeleteChannelsArgs,
+    MutationUpdateChannelArgs,
+    Permission,
+    QueryChannelArgs,
+    QueryChannelsArgs,
+    UpdateChannelResult,
+} from '@vendure/common/lib/generated-types';
+import { PaginatedList } from '@vendure/common/lib/shared-types';
+
+import { ErrorResultUnion } from '../../../common/error/error-result';
+import { Channel } from '../../../entity/channel/channel.entity';
+import { ChannelService } from '../../../service/services/channel.service';
+import { RequestContext } from '../../common/request-context';
+import { Allow } from '../../decorators/allow.decorator';
+import { Ctx } from '../../decorators/request-context.decorator';
+import { Transaction } from '../../decorators/transaction.decorator';
+
+@Resolver('Channel')
+export class ChannelResolver {
+    constructor(private channelService: ChannelService) {}
+
+    @Query()
+    @Allow(Permission.ReadSettings, Permission.ReadChannel)
+    async channels(
+        @Ctx() ctx: RequestContext,
+        @Args() args: QueryChannelsArgs,
+    ): Promise<PaginatedList<Channel>> {
+        return this.channelService.findAll(ctx, args.options || undefined);
+    }
+
+    @Query()
+    @Allow(Permission.ReadSettings, Permission.ReadChannel)
+    async channel(@Ctx() ctx: RequestContext, @Args() args: QueryChannelArgs): Promise<Channel | undefined> {
+        return this.channelService.findOne(ctx, args.id);
+    }
+
+    @Query()
+    @Allow(Permission.Authenticated)
+    async activeChannel(@Ctx() ctx: RequestContext): Promise<Channel> {
+        return ctx.channel;
+    }
+
+    @Transaction()
+    @Mutation()
+    @Allow(Permission.SuperAdmin, Permission.CreateChannel)
+    async createChannel(
+        @Ctx() ctx: RequestContext,
+        @Args() args: MutationCreateChannelArgs,
+    ): Promise<ErrorResultUnion<CreateChannelResult, Channel>> {
+        return this.channelService.create(ctx, args.input);
+    }
+
+    @Transaction()
+    @Mutation()
+    @Allow(Permission.SuperAdmin, Permission.UpdateChannel)
+    async updateChannel(
+        @Ctx() ctx: RequestContext,
+        @Args() args: MutationUpdateChannelArgs,
+    ): Promise<ErrorResultUnion<UpdateChannelResult, Channel>> {
+        return this.channelService.update(ctx, args.input);
+    }
+
+    @Transaction()
+    @Mutation()
+    @Allow(Permission.SuperAdmin, Permission.DeleteChannel)
+    async deleteChannel(
+        @Ctx() ctx: RequestContext,
+        @Args() args: MutationDeleteChannelArgs,
+    ): Promise<DeletionResponse> {
+        return this.channelService.delete(ctx, args.id);
+    }
+
+    /**
+     * ChannelService.delete() checks the DeleteChannel permission on each Channel before it touches
+     * any data, so a Channel outside the scope of the Role is never deleted, whatever happens to the
+     * other ids in the same call. See GHSA-22x4-937q-5fr5.
+     */
+    @Transaction()
+    @Mutation()
+    @Allow(Permission.SuperAdmin, Permission.DeleteChannel)
+    async deleteChannels(
+        @Ctx() ctx: RequestContext,
+        @Args() args: MutationDeleteChannelsArgs,
+    ): Promise<DeletionResponse[]> {
+        return Promise.all(args.ids.map(id => this.channelService.delete(ctx, id)));
+    }
+}
